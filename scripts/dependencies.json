@@ -1,0 +1,12 @@
+{
+  "libre_hardware_monitor": {
+    "version": "0.9.6",
+    "url": "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/download/v0.9.6/LibreHardwareMonitor.zip",
+    "sha256": "086d9f1b5a99e643edc2cfaaac16051685b551e4c5ac0b32a57c58c0e529c001"
+  },
+  "pawnio": {
+    "url": "https://raw.githubusercontent.com/LibreHardwareMonitor/LibreHardwareMonitor/e1f284cbb6e47bec22f18c19bd07d3037412ccbf/LibreHardwareMonitor.Windows.Forms/Resources/PawnIO_setup.exe",
+    "sha256": "a3a46226c5e2824f4cdd42be0eecbabfc672c86f7889710f5ab1e6ad385b47a0",
+    "signer_subject": "CN=namazso.eu"
+  }
+}
