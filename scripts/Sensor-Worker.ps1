@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+. "$PSScriptRoot\Write-SensorSnapshot.ps1"
 $runtime = Join-Path $root 'runtime'
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 $mutex = New-Object Threading.Mutex($false, 'Local\HaloPixelBarPerformanceMonitor')
@@ -41,6 +42,7 @@ try {
         }
         return $null
     }
+    $snapshotBlocked = $false
     while (-not (Test-Path -LiteralPath "$runtime\stop.flag")) {
         $data = @{timestamp=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()/1000.0; cpu_temp=$null; cpu_load=$null; gpu_temp=$null; gpu_load=$null; memory_load=$null}
         foreach ($hardware in $computer.Hardware) { $hardware.Update() }
@@ -58,8 +60,11 @@ try {
         if ($memory) { $data.memory_load = Read-Sensor $memory 'Load' @('Memory') }
         # Only numeric readings are saved. Hardware names, USB paths, serials,
         # network adapters and account information are intentionally excluded.
-        $data | ConvertTo-Json | Set-Content -LiteralPath "$runtime\sensors.tmp" -Encoding UTF8
-        Move-Item -LiteralPath "$runtime\sensors.tmp" -Destination "$runtime\sensors.json" -Force
+        $written = Write-SensorSnapshot -Path "$runtime\sensors.json" -Data $data
+        if (-not $written -and -not $snapshotBlocked) {
+            ('{0:o} Sensor snapshot temporarily unavailable; retrying next sample.' -f (Get-Date)) | Add-Content -LiteralPath "$runtime\sensor-error.log" -Encoding UTF8 -ErrorAction SilentlyContinue
+        }
+        $snapshotBlocked = -not $written
         if ($display.HasExited) { throw 'Display worker exited' }
         Start-Sleep -Seconds 1
     }

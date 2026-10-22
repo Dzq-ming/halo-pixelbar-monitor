@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "halo-pixelbar-monitor"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local Windows performance display for Halo PixelBar 2026 upgraded edition"
 readme = "README.md"
 requires-python = ">=3.11"

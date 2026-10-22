@@ -2,11 +2,14 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime
 
 from halo_pixelbar_monitor.config import DEFAULTS, read_config
 from halo_pixelbar_monitor.formatting import dashboard
 from halo_pixelbar_monitor.protocol import Screen, packet, parse_reply, ProtocolError
+from halo_pixelbar_monitor.snapshots import atomic_json, read_sensors
+from halo_pixelbar_monitor.__main__ import record_status
 
 
 def reply(command, payload, acknowledgement=False):
@@ -88,6 +91,49 @@ class ProtocolTests(unittest.TestCase):
     def test_oversized_packet_rejected(self):
         with self.assertRaises(ValueError):
             packet(0xE8, b'A'*58)
+
+
+class SnapshotTests(unittest.TestCase):
+    def test_retries_a_short_sharing_conflict(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'snapshot.json'
+            atomic_json(path, {'sample': 1})
+            import os
+            replace = os.replace
+            calls = 0
+            def temporarily_locked(source, destination):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    raise PermissionError('file busy')
+                replace(source, destination)
+            with patch('halo_pixelbar_monitor.snapshots.os.replace', side_effect=temporarily_locked), patch('halo_pixelbar_monitor.snapshots.time.sleep'):
+                atomic_json(path, {'sample': 2})
+            self.assertEqual(calls, 2)
+            self.assertEqual(json.loads(path.read_text()), {'sample': 2})
+
+    def test_persistent_lock_preserves_previous_file_and_status_is_optional(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'snapshot.json'
+            atomic_json(path, {'sample': 1})
+            with patch('halo_pixelbar_monitor.snapshots.os.replace', side_effect=PermissionError('file busy')), patch('halo_pixelbar_monitor.snapshots.time.sleep'):
+                with self.assertRaises(PermissionError):
+                    atomic_json(path, {'sample': 2})
+                with self.assertLogs(level='WARNING'):
+                    record_status(path, {'sample': 3})
+            self.assertEqual(json.loads(path.read_text()), {'sample': 1})
+
+    def test_transient_read_failure_retains_only_a_recent_sample(self):
+        path = Path('unused-sensor-file.json')
+        previous = {'timestamp': 100, 'cpu_temp': 42}
+        with patch.object(Path, 'read_text', side_effect=PermissionError('file busy')):
+            self.assertEqual(read_sensors(path, previous, now=105), previous)
+            self.assertEqual(read_sensors(path, previous, now=111), {})
+            self.assertEqual(read_sensors(path, previous, now=99), {})
+        for content in ('[]', '{', '{"timestamp": 100, "cpu_temp": 43}'):
+            with patch.object(Path, 'read_text', return_value=content):
+                data = read_sensors(path, previous, now=105)
+                self.assertEqual(data['cpu_temp'], 43 if content.endswith('43}') else 42)
 
 
 class ConfigTests(unittest.TestCase):

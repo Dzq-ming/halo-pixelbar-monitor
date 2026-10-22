@@ -172,6 +172,10 @@ CPU 温度可能需要 [PawnIO](https://pawnio.eu/) 与管理员权限。`Start-
 
 检查管理员权限和 PawnIO 是否已安装。先在官方 LibreHardwareMonitor 中确认该硬件能提供所需传感器。不要关闭系统安全功能，也不要替换为来源不明的旧驱动。
 
+**运行一段时间后停止显示**
+
+检查 `runtime/sensor-error.log` 和 `runtime/display.log`。0.1.1 修复了 Windows 读取数据文件时替换失败导致监控退出的问题：现在采用原子替换、短暂重试，文件持续占用时跳过本次采样并继续运行。短暂读取失败保留最近的有效读数，超过 10 秒则显示 `--`。旧版本请停止后更新代码，再重新启动。
+
 **显卡数据不对应独显**
 
 存在多张显卡时，调整 `gpu_index` 并重启。不同系统枚举顺序可能不同。选择超出范围时显示 `--`。
@@ -198,6 +202,7 @@ CPU 温度可能需要 [PawnIO](https://pawnio.eu/) 与管理员权限。`Start-
 
 ```powershell
 python -m unittest discover -s tests -v
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/test_sensor_snapshot.ps1
 python -m halo_pixelbar_monitor --preview
 ```
 
@@ -207,7 +212,7 @@ python -m halo_pixelbar_monitor --preview
 python scripts/check_public_files.py
 ```
 
-测试覆盖固定列宽、9→10 / 99→100 的边界、缺失数值、损坏回包、写入回读不一致、屏幕备份/恢复与无效配置。单元测试使用假设备，不等于硬件兼容性测试。
+测试覆盖固定列宽、9→10 / 99→100 的边界、缺失数值、损坏回包、写入回读不一致、屏幕备份/恢复、无效配置及文件占用后的恢复。PowerShell 测试使用实际 Windows 文件锁，Python 单元测试使用假设备，不等于硬件兼容性测试。
 GitHub Actions 运行相同检查，并解析 PowerShell 文件。
 
 目录结构：

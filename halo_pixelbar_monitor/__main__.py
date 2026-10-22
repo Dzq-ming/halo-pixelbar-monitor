@@ -1,9 +1,7 @@
 """Display worker. Start through Start-Monitor.cmd for live sensor data."""
 import argparse
-import json
 import logging
 from logging.handlers import RotatingFileHandler
-import os
 from pathlib import Path
 import sys
 import time
@@ -11,14 +9,17 @@ import time
 from .config import DEFAULTS, read_config
 from .formatting import dashboard
 from .protocol import Screen
+from .snapshots import atomic_json, read_sensors
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def atomic_json(path, value):
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf8")
-    os.replace(temporary, path)
+def record_status(path, value):
+    try:
+        atomic_json(path, value)
+    except OSError:
+        # A locked diagnostic file must not stop or reconnect the live display.
+        logging.warning("Display status could not be saved; retrying next refresh")
 
 
 def main():
@@ -46,6 +47,7 @@ def main():
     snapshot = None
     config = DEFAULTS.copy()
     last_error = None
+    data = {}
     try:
         while not (runtime / "stop.flag").exists():
             try:
@@ -53,13 +55,7 @@ def main():
             except (OSError, ValueError):
                 logging.warning("Invalid configuration; retaining last valid settings")
             try:
-                try:
-                    data = json.loads((runtime / "sensors.json").read_text(encoding="utf-8-sig"))
-                except (OSError, ValueError):
-                    data = {}
-                stamp = data.get("timestamp")
-                if type(stamp) not in (int,float) or not 0 <= time.time()-stamp <= 10:
-                    data = {}
+                data = read_sensors(runtime / "sensors.json", data)
                 text = dashboard(data, offset_hours=config["timezone_offset_hours"])
                 if screen is None:
                     screen = Screen()
@@ -70,7 +66,7 @@ def main():
                 hot = ((data.get("cpu_temp") or 0) >= config["hot_cpu_c"]
                        or (data.get("gpu_temp") or 0) >= config["hot_gpu_c"])
                 screen.show(text, (255,120,40) if hot else (102,200,255), config["alignment"])
-                atomic_json(runtime / "display-status.json", {"timestamp":time.time(), "text":text, "verified":True})
+                record_status(runtime / "display-status.json", {"timestamp":time.time(), "text":text, "verified":True})
                 if last_error:
                     logging.info("Screen reconnected and text verified")
                 last_error = None
@@ -83,7 +79,7 @@ def main():
                 if screen:
                     screen.close()
                     screen = None
-                atomic_json(runtime / "display-status.json", {"timestamp":time.time(), "verified":False, "error":error})
+                record_status(runtime / "display-status.json", {"timestamp":time.time(), "verified":False, "error":error})
             deadline = time.monotonic() + config["refresh_seconds"]
             while time.monotonic() < deadline and not (runtime / "stop.flag").exists():
                 time.sleep(0.1)
